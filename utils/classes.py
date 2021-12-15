@@ -28,7 +28,10 @@ class TariffCA:
         """returns all HS codes contained in a heading"""
         query = self.tariff_table.objects.filter(
             Q(tariff__icontains=self.tariff) |            
-            Q(tariff=f'{self.tariff[:2]}.{self.tariff[2:]}')    # tariff string becomes xx.xx
+            Q(tariff=f'{self.tariff[:2]}.{self.tariff[2:]}')    # query on tariff == xx.xx
+        ).exclude(
+            Q(desc1__isnull=True) |                             # exclude nulls
+            Q(desc1__exact='')                                  # and empty strings
         ).order_by('tariff')
         
         if not query:
@@ -37,6 +40,11 @@ class TariffCA:
         return query
     
     def _get_dashes(self, tariff:str) -> int:
+        """
+        Returns an integer representing the dash level of an HS code
+        :params: tariff:str
+        :returns: int
+        """
         
         digits = tariff.replace('.', '')[4:][::-1] # remove dots, drop first four digits and reverse        
         dashcount = len(digits)        
@@ -46,12 +54,13 @@ class TariffCA:
             else:
                 break
         return dashcount
-        # return len(t[4:]) - min(1, t[-2:].count('0'))
+
     
     def _base_dict(self, q:Model, level:int) -> dict:
         """ returns basic dictionary structure for Heading type
-        input: 3 element list containing hscode, description and unit of measure"""
-
+        :params: q:django.db.models.Model, level: int
+        :return: dict
+        """
 
         return {
             'tariff': q.tariff,            
@@ -66,14 +75,15 @@ class TariffCA:
         }
 
     
-    def _key_chain(self, tariff_string:str):
+    def _key_chain(self, tariff_string:str) -> list:
         """generates a list of strings signifying heading, subheading and tariff levels of a tariff
-        input: str representing tariff gen_keychain('3926.90.99.90')
+        :params: tariff_string:str representing tariff gen_keychain('3926.90.99.90')
+        :return: list
         \>>> ['3926', '3926.90', '3926.90.99']"""
 
         return [tariff_string[:i] for i in range(4, 13, 3)]
     
-    def _get_dict_to_insert(self, hs_dict: dict, chain: list, level = 0) -> dict:
+    def _get_dict_to_insert(self, hs_dict: dict, chain: list, level: int = 0) -> dict:
         """input: dictionary, list
         recursive, returns dictionary if key in chain"""
 
@@ -86,7 +96,7 @@ class TariffCA:
                 break
         return hs_dict, level
     
-    def gen_tariff_dict(self):
+    def gen_tariff_dict(self) -> dict:
         """generates dictionary structure of heading"""
 
         tariff_dict = {}
@@ -100,16 +110,9 @@ class TariffCA:
             curr_dict, level = self._get_dict_to_insert(tariff_dict, self._key_chain(tariff))
             curr_dict[tariff] = self._base_dict(q, level)
 
-        return tariff_dict
-    
-    def get_query_dict(self):
-        base_dict = {
-            '39.26': {
-                'description': None
-            }
-        }
-        
-    def book_view_terminal(self, _dict=None):
+        return tariff_dict    
+
+    def book_view_terminal(self, _dict=None) -> None:
         """ prints to terminal book view format of heading recursively"""
         d = _dict or self.gen_tariff_dict()
         for k, v in d.items():            
